@@ -1,0 +1,28 @@
+[project]
+name = "trainctl"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "David Völgyes", email = "dvolgyes@deepconv.ai" }]
+dependencies = [
+  "click>=8.5.0",
+  "loguru>=0.7.3",
+  "tqdm>=4.70.0",
+]
+
+[dependency-groups]
+dev = [
+  "coverage>=7.16.0",
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
+  "pytest-xdist>=3.8.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "trainctl"
+module-root = ""
