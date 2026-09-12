@@ -27,8 +27,10 @@ time it bootstraps for a run:
   modalities = 74 files), plus a generated `hooks/README.md` and a `trainctl-hooks-state.json`
   marker recording the session id, catalogue version, and source path, so a resumed run can detect
   whether it's compatible with the existing tree.
-- Every seeded script starts **disabled** (mode `0o644`, no execute bit) regardless of whether it
-  came from the baseline or a template.
+- A slot seeded from a disabled example template always starts **disabled** (mode `0o644`, no
+  execute bit). A slot the baseline *does* provide is copied with its own mode preserved
+  byte-for-byte (uid/gid too, where permitted) — a baseline script that is already executable
+  comes up enabled immediately, letting an operator ship a pre-armed baseline.
 
 ### Enabling and disabling a hook
 
@@ -202,9 +204,10 @@ uv run python -m examples.playground.run --hooks-source-dir /tmp/my-hooks
 ```
 
 The startup banner prints the run's log directory; under it, `hooks/light/on_train_batch_end.sh`
-is the *copy* of the script above (still disabled — every seeded script starts with no execute
-bit, baseline or not), and every other one of the 74 slots is a disabled, commented example seeded
-from `trainctl/hooks/templates/`. In a second terminal:
+is the *copy* of the script above (still disabled, since it was never `chmod +x`'d before this
+baseline was seeded — the copy preserves whatever mode the source had), and every other one of the
+74 slots is a disabled, commented example seeded from `trainctl/hooks/templates/`. In a second
+terminal:
 
 ```sh
 chmod +x <log-dir>/hooks/light/on_train_batch_end.sh
