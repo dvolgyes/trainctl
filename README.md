@@ -140,11 +140,33 @@ first, so the two are not a single simultaneous snapshot.
 - `hooks_rank_policy` (`"rank_zero"` default, or `"all"`) controls which ranks dispatch hooks at
   all.
 
+### Attaching to a Lightning `Trainer`
+
+`TrainctlMixin.configure_callbacks()` appends one Trainctl hooks `Callback` instance (built once
+per model instance and reused across `fit()` → `validate()` → `test()` → `predict()`) alongside
+whatever your own `configure_callbacks()` override returns via `super()`. Nothing about your
+model's or Trainer's own callbacks is removed or replaced.
+
+The hooks session (the live `hooks/` tree plus the `trainctl.log` / `trainctl-rank-N.log` Loguru
+bridge) is bootstrapped lazily, on the first callback firing observed for a run — normally the
+adapter's own `setup(trainer, pl_module, stage)`, which Lightning calls *before* the composed
+model's own `setup`. Rank and world size come directly from `trainer.global_rank` /
+`trainer.world_size` at that point, not from any later Trainctl-internal rank-gathering step. A
+resumed run (e.g. `fit()` followed by a separate `test()` call against the same model) detects the
+existing marker and reuses the same live tree and session id rather than reseeding.
+
+The hooks/logging session is finalized (temporary invocation directories removed, the logging
+bridge restored) at the end of `TrainctlRuntime.teardown()` on the normal path. On an uncaught
+exception, Lightning skips both the model's and the callback's own `teardown` entirely — so the
+adapter's `on_exception` dispatches the `on_exception` light/heavy hooks itself and then finalizes
+the session directly, in a `finally`, before the original exception propagates.
+
 ### Status
 
 Shipped: config surface and validation, the Lightning-logging-to-Loguru bridge
 (`intercept_lightning_logging`), the run-local `hooks/` tree bootstrap and seeding, discovery and
-enablement semantics, and light/heavy dispatch (including tensor export) with the supervised
-runner described above. **Not yet wired into a live Lightning `Trainer`** — the pieces above are
-exercised directly by `tests/hooks/*_test.py`, not yet attached via `configure_callbacks()`. The
-Lightning adapter and the end-to-end operator walkthrough land in subsequent increments.
+enablement semantics, light/heavy dispatch (including tensor export) with the supervised runner
+described above, and the Lightning `Callback` adapter wired in through `configure_callbacks()`
+(both `lightning.pytorch` and `pytorch_lightning`). Exercised directly by `tests/hooks/*_test.py`
+plus an in-process `Trainer.fit`-based end-to-end suite. The example walkthrough (playground/CIFAR
+updates) lands in the next increment.

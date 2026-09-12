@@ -9,6 +9,8 @@ Trainer/model state. REST and FUSE only read published `RuntimeSnapshot`s or enq
 import json
 import math
 import os
+import secrets
+import shutil
 import socket
 import threading
 import time
@@ -20,7 +22,10 @@ from typing import Any
 from loguru import logger
 
 from trainctl.config import TrainctlConfig
+from trainctl.hooks.manager import bootstrap_hooks_tree
+from trainctl.hooks.session import HandleResult, HookSession
 from trainctl.lightning_backend import LightningBackend
+from trainctl.logging import LoggingSession
 from trainctl.runtime import (
     cuda_memory,
     forward_input,
@@ -162,6 +167,9 @@ class TrainctlRuntime:
         self.tunable_hparams: dict[str, hparam_registry.HparamValue] = {}
         self._tunable_hparam_specs: dict[str, hparam_registry.TunableHparamSpec] = {}
 
+        self._hook_session: HookSession | None = None
+        self._logging_session: LoggingSession | None = None
+
     @property
     def rest_url(self) -> str | None:
         """The reachable REST base URL, once started."""
@@ -237,6 +245,108 @@ class TrainctlRuntime:
         self._guarded("FUSE shutdown", self._stop_fuse)
         self._guarded("pytorch distributed debug shutdown", self.torch_debug.stop)
         self.state.update(status="finished")
+
+    # ---- lifecycle hooks --------------------------------------------------------
+
+    def ensure_hook_session(self, trainer: Any, pl_module: Any) -> None:
+        """Bootstraps this run's hooks tree and logging bridge for one stage `_run`.
+
+        Idempotent -- a no-op if a session from this same stage is already open.
+        Called only from the hooks adapter's own `setup(trainer, pl_module, stage)`,
+        which Lightning always calls before any other callback method for that
+        `_run` and always pairs with a matching `teardown` (barring an uncaught
+        exception, handled separately by `finalize_hooks_and_logging`). A hook that
+        fires with no stage active at all (e.g. a standalone `Trainer.save_checkpoint`
+        call outside `fit`/`validate`/`test`/`predict`) finds no session and is a
+        silent no-op in `dispatch_hook` -- there is no run for it to belong to.
+        Reads rank/world size directly from `trainer`: `_local_rank_info` is not
+        populated yet at this point (the adapter's `setup` runs before the composed
+        model's own `setup`, which is what triggers `_gather_ranks`).
+        """
+        if self._hook_session is not None:
+            return
+        base_dir = _default_base_dir(pl_module, self.run_id)
+        session_id = _new_hooks_session_id()
+        logging_session = LoggingSession(session_id)
+        if self.config.intercept_lightning_logging:
+            logging_session.install()
+        if self.config.run_log_enabled:
+            rank = trainer.global_rank
+            filename = (
+                f"trainctl-rank-{rank}.log"
+                if self.config.hooks_rank_policy == "all"
+                else "trainctl.log"
+            )
+            logging_session.attach_run_file(base_dir / filename)
+        log = logging_session.bind()
+        shell = self.config.hooks_shell
+        if shell is None:
+            resolved = shutil.which("bash")
+            if resolved is None:
+                raise RuntimeError(
+                    "trainctl: hooks_enabled requires bash on PATH or an explicit hooks_shell"
+                )
+            shell = Path(resolved)
+        live_dir = bootstrap_hooks_tree(
+            base_dir, self.config.hooks_source_dir, session_id=session_id, log=log
+        )
+        self._logging_session = logging_session
+        self._hook_session = HookSession(
+            live_dir,
+            session_id=session_id,
+            rank=trainer.global_rank,
+            world_size=trainer.world_size,
+            rank_policy=self.config.hooks_rank_policy,
+            shell=shell,
+            timeout_s=self.config.hooks_timeout_s,
+            max_params_bytes=self.config.hooks_max_params_bytes,
+            max_metadata_items=self.config.hooks_max_metadata_items,
+            max_metadata_depth=self.config.hooks_max_metadata_depth,
+            max_export_bytes=self.config.hooks_max_export_bytes,
+            max_output_bytes=self.config.hooks_max_output_bytes,
+            log=log,
+        )
+
+    def dispatch_hook(
+        self,
+        trainer: Any,
+        hook: str,
+        *,
+        stage_override: str | None = None,
+        arguments: dict[str, Any] | None = None,
+        batch_idx: int | None = None,
+        dataloader_idx: int | None = None,
+    ) -> HandleResult | None:
+        """Dispatches one Lightning callback occurrence through the live `HookSession`.
+
+        A no-op if `ensure_hook_session` never installed a session (hooks disabled).
+        """
+        if self._hook_session is None:
+            return None
+        stage = stage_override if stage_override is not None else _stage_string(trainer)
+        return self._hook_session.handle(
+            hook,
+            stage=stage,
+            epoch=trainer.current_epoch,
+            global_step=trainer.global_step,
+            batch_idx=batch_idx,
+            dataloader_idx=dataloader_idx,
+            arguments=arguments,
+        )
+
+    def finalize_hooks_and_logging(self) -> None:
+        """Closes the hooks session and logging bridge, if either is currently open.
+
+        Idempotent. Called from the hooks adapter's own `teardown` on the normal
+        path, and from its `on_exception` on the failure path, since Lightning skips
+        the callback's own `teardown` after an uncaught exception.
+        """
+        if self._hook_session is not None:
+            self._hook_session.close()
+            self._hook_session = None
+        if self._logging_session is not None:
+            self._logging_session.close()
+            self._logging_session = None
 
     # ---- safe points ----------------------------------------------------------
 
@@ -759,6 +869,17 @@ def _default_base_dir(pl_module: Any, run_id: str) -> Path:
     xdg = os.environ.get("XDG_RUNTIME_DIR")
     root = Path(xdg) / "trainctl" if xdg else Path(f"/tmp/trainctl-{os.getuid()}")  # noqa: S108 -- per-uid tmp root
     return root / run_id
+
+
+def _new_hooks_session_id() -> str:
+    """A collision-resistant session id: `commands.next_id` is process-local only."""
+    return f"{time.time_ns()}-{os.getpid()}-{secrets.token_hex(4)}"
+
+
+def _stage_string(trainer: Any) -> str | None:
+    """`trainer.state.fn`'s value (`fit`/`validate`/`test`/`predict`), or `None`."""
+    fn = trainer.state.fn
+    return fn.value if fn is not None else None
 
 
 # Shared offset step for `TrainctlRuntime._start_rest_and_torch_debug`'s paired port

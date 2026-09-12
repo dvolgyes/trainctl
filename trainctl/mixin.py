@@ -15,14 +15,16 @@ whose MRO spans both, and `setup()` rejects a Trainer from the other namespace.
 If a subclass overrides one of the reserved hooks below (`setup`, `on_fit_start`,
 `teardown`, `on_train_batch_start`, `on_before_backward`, `backward`,
 `on_after_backward`, `on_train_batch_end`, `on_train_epoch_end`,
-`on_validation_epoch_end`, `on_before_optimizer_step`, `on_fit_end`), it must call
-`super()`.
+`on_validation_epoch_end`, `on_before_optimizer_step`, `on_fit_end`,
+`configure_callbacks`), it must call `super()`.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from trainctl.config import TrainctlConfig
+from trainctl.hooks.lightning import build_hooks_callback_class
 from trainctl.lightning_backend import (
     LightningBackend,
     detect_lightning_backend_from_mro,
@@ -38,14 +40,20 @@ class TrainctlMixin:
         __trainctl_lightning_backend__: The Lightning backend detected from the
             subclass's MRO at class-definition time (`lightning.pytorch` or
             `pytorch_lightning`); set once per subclass by `__init_subclass__`.
+        __trainctl_hooks_callback_class__: This subclass's concrete lifecycle-hooks
+            `Callback` adapter class, built once per subclass by `__init_subclass__`.
     """
 
     __trainctl_lightning_backend__: LightningBackend
+    __trainctl_hooks_callback_class__: type
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         cls.__trainctl_lightning_backend__ = detect_lightning_backend_from_mro(
             cls.__mro__
+        )
+        cls.__trainctl_hooks_callback_class__ = build_hooks_callback_class(
+            cls.__trainctl_lightning_backend__
         )
 
     def __init__(
@@ -118,6 +126,7 @@ class TrainctlMixin:
         self._trainctl = TrainctlRuntime(
             config, type(self).__trainctl_lightning_backend__
         )
+        self._trainctl_hooks_adapter: Any | None = None
         super().__init__(*args, **kwargs)
 
     def setup(self, stage: str) -> None:
@@ -194,6 +203,16 @@ class TrainctlMixin:
         if self._trainctl.config.enabled:
             self._trainctl.process_safe_point(self, SafePoint.FIT_END)
 
+    def configure_callbacks(self) -> Sequence[Any]:
+        callbacks = _normalize_callbacks(super().configure_callbacks())  # type: ignore[misc]  # provided by the composed LightningModule
+        if self._trainctl.config.enabled and self._trainctl.config.hooks_enabled:
+            if self._trainctl_hooks_adapter is None:
+                self._trainctl_hooks_adapter = type(
+                    self
+                ).__trainctl_hooks_callback_class__()
+            callbacks.append(self._trainctl_hooks_adapter)
+        return callbacks
+
     def _validate_trainer_backend(self) -> None:
         backend = type(self).__trainctl_lightning_backend__
         trainer = self.trainer  # type: ignore[attr-defined]  # provided by the composed LightningModule
@@ -203,3 +222,12 @@ class TrainctlMixin:
                 f"{type(trainer).__module__}.{type(trainer).__name__}. "
                 "Do not mix lightning.pytorch and pytorch_lightning."
             )
+
+
+def _normalize_callbacks(value: Any) -> list[Any]:
+    """Coerces a `configure_callbacks()` return value to a fresh, appendable list."""
+    if value is None:
+        return []
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return list(value)
+    return [value]

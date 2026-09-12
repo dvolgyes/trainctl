@@ -18,6 +18,7 @@ class LightningBackend:
         PL: The imported Lightning package module.
         LightningModule: The backend's `LightningModule` base class.
         Trainer: The backend's `Trainer` class.
+        callback_class: The backend's `Callback` base class.
         version: The backend package's reported version string.
     """
 
@@ -25,6 +26,7 @@ class LightningBackend:
     PL: ModuleType
     LightningModule: type
     Trainer: type
+    callback_class: type
     version: str
 
 
@@ -86,5 +88,6 @@ def load_backend(name: str) -> LightningBackend:
         PL=pl_module,
         LightningModule=pl_module.LightningModule,
         Trainer=pl_module.Trainer,
+        callback_class=pl_module.Callback,
         version=getattr(pl_module, "__version__", "unknown"),
     )
