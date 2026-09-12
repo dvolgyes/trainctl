@@ -1,0 +1,44 @@
+# Trainctl heavy hook: @@NAME@@ (@@GROUP@@)
+#
+# @@DESCRIPTION@@
+#
+# Disabled by default: this file has no execute bit. Enable it with:
+#   chmod +x hooks/heavy/@@NAME@@.sh
+# Disable it again, without restarting training, with:
+#   chmod -x hooks/heavy/@@NAME@@.sh
+#
+# WARNING: an enabled heavy hook runs -- and, if this callback carries
+# tensors, exports them to NumPy .npy files -- on every occurrence of this
+# callback until you chmod -x it again. For a per-batch callback that can
+# mean one export per training batch; there is no built-in sampling.
+#
+# Trainctl runs this script synchronously, on the training thread, at the
+# real Lightning callback point, and waits for it to exit before training
+# continues. It is invoked as:
+#   bash @@NAME@@.sh <path-to-manifest.json>
+#
+# <path-to-manifest.json> is a JSON file describing this callback occurrence
+# (the same identity/context fields as the light hook's params.json) plus a
+# tensor manifest: for each tensor argument supplied to this callback, a
+# generated filename (for example tensor-000001.npy) alongside the manifest,
+# its shape, dtype, and any recorded conversion (for example bfloat16 to
+# float32). Files are written with numpy.save and pickling disabled; load
+# them the same way (numpy.load(..., allow_pickle=False)). Callbacks with no
+# tensor arguments still produce a valid manifest with an empty tensor list.
+#
+# The exported files exist only for the duration of this script's execution
+# and are removed once it exits -- copy anything you need to keep elsewhere
+# first. The working directory is this run's live hooks/ tree. Standard
+# input is closed; do not expect to read from the training terminal.
+set -euo pipefail
+
+manifest_json="${1:?missing manifest.json path}"
+
+echo "[@@NAME@@] manifest: ${manifest_json}"
+
+# Example: summarize the manifest without loading any array.
+# python3 -c '
+# import json, sys
+# manifest = json.load(open(sys.argv[1]))
+# print(len(manifest.get("tensors", [])), "tensor(s)")
+# ' "${manifest_json}"

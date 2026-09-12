@@ -8,6 +8,7 @@ authors = [{ name = "David Völgyes", email = "dvolgyes@deepconv.ai" }]
 dependencies = [
   "click>=8.5.0",
   "loguru>=0.7.3",
+  "numpy>=2.5.3",
   "tqdm>=4.70.0",
 ]
 

@@ -1,0 +1,36 @@
+# Trainctl light hook: @@NAME@@ (@@GROUP@@)
+#
+# @@DESCRIPTION@@
+#
+# Disabled by default: this file has no execute bit. Enable it with:
+#   chmod +x hooks/light/@@NAME@@.sh
+# Disable it again, without restarting training, with:
+#   chmod -x hooks/light/@@NAME@@.sh
+#
+# Trainctl runs this script synchronously, on the training thread, at the
+# real Lightning callback point, and waits for it to exit before training
+# continues. It is invoked as:
+#   bash @@NAME@@.sh <path-to-params.json>
+#
+# <path-to-params.json> is a JSON file (not inline JSON) describing this
+# callback occurrence: schema/session/occurrence/invocation identity, hook
+# and modality, timestamp, pid, rank/world_size, stage, epoch/global_step,
+# batch/dataloader indices when available, and a bounded description of this
+# callback's arguments. Tensor arguments are described (kind/shape/dtype/
+# device) only -- no tensor values are evaluated or available on this path.
+# Use the heavy hook (hooks/heavy/@@NAME@@.sh) if you need real array data.
+#
+# The working directory is this run's live hooks/ tree, so helper scripts
+# copied alongside this one (for example helpers/notify.sh, if your baseline
+# provides one) can be found by relative path. Standard input is closed;
+# do not expect to read from the training terminal.
+set -euo pipefail
+
+params_json="${1:?missing params.json path}"
+
+echo "[@@NAME@@] params: ${params_json}"
+
+# Example: forward a summary elsewhere without embedding secrets in argv or
+# relying on this script's own stdout as a control channel.
+# curl -fsS -X POST -H 'Content-Type: application/json' \
+#      --data-binary @"${params_json}" http://127.0.0.1:9000/notify || true

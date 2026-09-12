@@ -1,0 +1,30 @@
+# Trainctl lifecycle hooks
+
+This directory is a run-local, editable copy of Trainctl's lifecycle hook scripts. Trainctl runs
+at most one enabled script per `(callback, modality)` combination, synchronously, on the training
+thread, at the actual Lightning callback point, and waits for it to exit before training
+continues.
+
+- `light/<callback>.sh` -- cheap: receives a small JSON parameters file describing the callback
+  occurrence. Tensor arguments are described (shape/dtype/device), never evaluated.
+- `heavy/<callback>.sh` -- expensive: additionally receives NumPy `.npy` exports of any tensor
+  arguments supplied to that callback, referenced from a JSON manifest. Files exist only for this
+  script's execution and are removed afterward.
+
+Every generated script starts disabled (no execute bit). Enable one with:
+
+    chmod +x hooks/light/on_train_batch_end.sh
+
+Disable it again, without restarting training, with:
+
+    chmod -x hooks/light/on_train_batch_end.sh
+
+Editing or replacing a script takes effect at its next callback occurrence. This copy is
+independent of the baseline directory it was seeded from, if any: editing that baseline after
+this run starts has no effect on this run, and a deleted script here stays deleted across restarts
+of this same run directory.
+
+Catalogue version @@CATALOGUE_VERSION@@: @@CALLBACK_COUNT@@ supported callbacks, @@SLOT_COUNT@@
+script slots (light + heavy).
+
+See `trainctl.log` in this run directory for hook discovery, dispatch, and failure diagnostics.
