@@ -7,17 +7,49 @@ requires-python = ">=3.12"
 authors = [{ name = "David Völgyes", email = "dvolgyes@deepconv.ai" }]
 dependencies = [
   "click>=8.5.0",
+  "fastapi>=0.141.1",
+  "lightning>=2.6.5",
   "loguru>=0.7.3",
+  "mfusepy>=3.1.1",
   "numpy>=2.5.3",
+  "py-spy>=0.4.2",
+  "tabulate>=0.10.0",
   "tqdm>=4.70.0",
+  "uvicorn>=0.52.4",
+]
+
+[project.optional-dependencies]
+debugger = ["pygdbmi>=0.11"]
+graphs = [
+  "torchview>=0.2.7",
+  "torchviz>=0.0.3",
+]
+inspectors = [
+  "trainctl[torchinfo]",
+  "trainctl[graphs]",
+  "trainctl[torchlens]",
+]
+torchinfo = [
+  "torchinfo>=1.8.0",
+]
+torchlens = [
+  "torchlens>=2.34.1",
 ]
 
 [dependency-groups]
 dev = [
   "coverage>=7.16.0",
+  "httpx2>=2.12.0",
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
   "pytest-xdist>=3.8.0",
+  "torchinfo>=1.8.0",
+  "torchview>=0.2.7",
+  "torchviz>=0.0.3",
+]
+examples = [
+  "tensorboard>=2.21.0",
+  "torchvision>=0.29.0",
 ]
 
 [build-system]

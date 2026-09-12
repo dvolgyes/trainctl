@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>trainctl</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.14.0/lib/viz-standalone.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>trainctl</h1>
+      <span id="status-badge" class="badge">connecting&hellip;</span>
+      <span id="run-location" class="run-location"></span>
+      <div class="poll-controls">
+        <label for="poll-interval-input">poll every</label>
+        <input
+          id="poll-interval-input"
+          type="number"
+          min="0"
+          max="120"
+          step="1"
+        />
+        <span>s (0 = off)</span>
+        <button id="refresh-now-btn" type="button">Refresh</button>
+      </div>
+      <nav>
+        <a href="/docs">API docs</a>
+        <a href="/files/">files</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="panel-run">
+        <h2>Run</h2>
+        <dl class="stat-grid">
+          <dt>Epoch</dt>
+          <dd id="run-epoch">-</dd>
+          <dt>Global step</dt>
+          <dd id="run-step">-</dd>
+          <dt>Batch</dt>
+          <dd id="run-batch-idx">-</dd>
+          <dt>Hold state</dt>
+          <dd id="hold-state">-</dd>
+          <dt>Pending commands</dt>
+          <dd id="pending-commands">-</dd>
+        </dl>
+        <div class="button-row">
+          <button id="pause-btn" type="button">Pause</button>
+          <button id="resume-btn" type="button" hidden>Resume</button>
+          <button id="checkpoint-btn" type="button">Checkpoint</button>
+          <button id="snapshot-btn" type="button">Snapshot</button>
+          <button id="stop-btn" type="button" class="danger">Stop</button>
+        </div>
+        <p id="action-status" class="status-line"></p>
+      </section>
+
+      <section id="panel-overview">
+        <h2>Model overview</h2>
+        <dl class="stat-grid">
+          <dt>Class</dt>
+          <dd id="model-class">-</dd>
+          <dt>Parameters</dt>
+          <dd id="model-param-counts">-</dd>
+        </dl>
+        <div id="inspector-availability" class="badge-row"></div>
+        <details>
+          <summary>Summary (torchinfo)</summary>
+          <pre id="model-summary"></pre>
+        </details>
+        <details>
+          <summary>Captured hparams (read-only)</summary>
+          <div id="readonly-hparams-list" class="kv-list"></div>
+        </details>
+      </section>
+
+      <section id="panel-controls">
+        <h2>Controls</h2>
+        <form id="lr-form" class="inline-form">
+          <label for="lr-input">Learning rate</label>
+          <input id="lr-input" type="number" step="any" min="0" required />
+          <button type="submit">Set</button>
+          <span id="lr-status" class="status-line"></span>
+        </form>
+        <div class="button-row">
+          <button id="reset-momentum-btn" type="button" hidden>
+            Reset momentum
+          </button>
+          <label class="inline-form">
+            <input id="finite-check-toggle" type="checkbox" />
+            Dataloader finite-value check
+          </label>
+        </div>
+        <h3>Live-tunable hyperparameters</h3>
+        <div id="tunable-hparams-list" class="kv-list"></div>
+        <div class="button-row">
+          <button id="tunable-hparams-set-all-btn" type="button">
+            Set all
+          </button>
+          <span id="tunable-hparams-set-all-status" class="status-line"></span>
+        </div>
+      </section>
+
+      <section id="panel-metrics">
+        <h2>Metrics</h2>
+        <div id="metrics-list" class="kv-list"></div>
+      </section>
+
+      <section id="panel-pipeline">
+        <h2>Pipeline pressure</h2>
+        <pre id="pipeline-summary"></pre>
+      </section>
+
+      <section id="panel-inspectors" class="wide">
+        <h2>Inspectors</h2>
+        <div id="capture-buttons" class="capture-grid"></div>
+
+        <h3>Live views</h3>
+        <div class="button-row">
+          <button id="live-summary-btn" type="button">
+            Live model summary
+          </button>
+          <button id="live-graph-btn" type="button">Live graph (DOT)</button>
+        </div>
+        <div id="live-view-output" class="dot-container"></div>
+      </section>
+
+      <section id="panel-profiler" class="wide">
+        <h2>Profiler</h2>
+        <form id="profile-form" class="inline-form">
+          <label for="profile-warmup">warmup</label>
+          <input
+            id="profile-warmup"
+            type="number"
+            min="0"
+            value="0"
+            style="width: 4rem"
+          />
+          <label for="profile-active">active</label>
+          <input
+            id="profile-active"
+            type="number"
+            min="1"
+            value="1"
+            style="width: 4rem"
+          />
+          <label for="profile-level">level</label>
+          <select id="profile-level">
+            <option value="basic">basic</option>
+            <option value="shapes">shapes</option>
+            <option value="memory">memory</option>
+            <option value="full">full</option>
+          </select>
+          <label
+            ><input id="profile-then-hold" type="checkbox" /> then hold</label
+          >
+          <button type="submit">Arm</button>
+        </form>
+        <div id="profile-result" class="capture-result"></div>
+        <pre id="profiler-state"></pre>
+
+        <h3>Lightning profiler</h3>
+        <p>
+          current level:
+          <span id="lightning-profiler-current" class="status-line">-</span>
+        </p>
+        <form id="lightning-profiler-form" class="inline-form">
+          <label for="lightning-profiler-level">set level</label>
+          <select id="lightning-profiler-level">
+            <option value="off">off</option>
+            <option value="simple">simple</option>
+            <option value="advanced">advanced</option>
+            <option value="pytorch">pytorch</option>
+          </select>
+          <button type="submit">Set</button>
+          <button id="lightning-profiler-view-btn" type="button">
+            View summary
+          </button>
+        </form>
+        <div id="lightning-profiler-result" class="capture-result"></div>
+      </section>
+
+      <section id="panel-cuda-memory">
+        <h2>CUDA memory</h2>
+        <button id="cuda-snapshot-btn" type="button">Snapshot now</button>
+        <div id="cuda-result" class="capture-result"></div>
+        <pre id="cuda-memory-state"></pre>
+      </section>
+
+      <section id="panel-artifacts">
+        <h2>Artifacts</h2>
+        <ul id="artifacts-list" class="artifact-list"></ul>
+        <div id="artifact-detail" class="capture-result"></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

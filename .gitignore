@@ -235,3 +235,13 @@ __marimo__/
 *.npz
 *.npy
 mnt/
+
+# trainctl examples: downloaded datasets, TensorBoard logs, checkpoints
+examples/cifar/data/
+examples/cifar/lightning_logs/
+examples/playground/logs/
+*.ckpt
+.pre-commit-local-config.d/
+
+# trainctl runtime: default checkpoint/snapshot/debug-capture artifact directory
+trainctl_artifacts/
