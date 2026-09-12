@@ -140,6 +140,29 @@ first, so the two are not a single simultaneous snapshot.
 - `hooks_rank_policy` (`"rank_zero"` default, or `"all"`) controls which ranks dispatch hooks at
   all.
 
+### Security limits and recovery
+
+- Nothing about the facility executes arbitrary content from training data or from the network —
+  the only code that ever runs is a script an operator placed under the run's own `hooks/`
+  directory (or its baseline `hooks_source_dir`) and explicitly `chmod +x`'d. Scripts run as the
+  training process's own user, with its own environment and filesystem access; trainctl adds no
+  privilege boundary beyond the execute bit itself.
+- `hooks_max_params_bytes`, `hooks_max_metadata_items`/`_depth`, `hooks_max_export_bytes`, and
+  `hooks_max_output_bytes` are hard caps enforced *before* the corresponding resource is spent
+  (before encoding, before traversing deeper, before copying a tensor off its device, before
+  retaining more of a stream) — a misbehaving or oversized batch cannot turn a hook into an
+  unbounded memory or disk consumer.
+- A script that hangs is bounded only by `hooks_timeout_s` (`None` by default — set an explicit
+  value outside interactive sessions); once it fires, the *entire process group* is killed, so a
+  hook cannot leave orphaned background work behind.
+- **Recovery:** disabling a stuck or misbehaving hook never requires restarting training —
+  `chmod -x` the script and the next occurrence simply skips it. A hook that crashed or timed out
+  already had its private invocation directory removed (success, failure, and timeout all clean up
+  the same way), so there is never a stale `.hooks-tmp/` entry to manually clear. If a run's
+  `hooks/` tree itself is in a bad state, the marker file (`trainctl-hooks-state.json`, next to
+  `hooks/`) records the session that published it; deleting both and restarting the run bootstraps
+  a fresh tree from `hooks_source_dir` (or fresh disabled examples) exactly as the first run did.
+
 ### Attaching to a Lightning `Trainer`
 
 `TrainctlMixin.configure_callbacks()` appends one Trainctl hooks `Callback` instance (built once
@@ -148,25 +171,61 @@ whatever your own `configure_callbacks()` override returns via `super()`. Nothin
 model's or Trainer's own callbacks is removed or replaced.
 
 The hooks session (the live `hooks/` tree plus the `trainctl.log` / `trainctl-rank-N.log` Loguru
-bridge) is bootstrapped lazily, on the first callback firing observed for a run — normally the
-adapter's own `setup(trainer, pl_module, stage)`, which Lightning calls *before* the composed
-model's own `setup`. Rank and world size come directly from `trainer.global_rank` /
-`trainer.world_size` at that point, not from any later Trainctl-internal rank-gathering step. A
+bridge) is owned entirely by the adapter's own `setup`/`teardown` callback methods, not the
+composed model's — Lightning calls the adapter's `setup(trainer, pl_module, stage)` before any
+other callback method for a stage's `fit`/`validate`/`test`/`predict` call, and always pairs it
+with a matching `teardown` afterward. Rank and world size come directly from `trainer.global_rank`
+/ `trainer.world_size` at that point, not from any later Trainctl-internal rank-gathering step. A
 resumed run (e.g. `fit()` followed by a separate `test()` call against the same model) detects the
 existing marker and reuses the same live tree and session id rather than reseeding.
 
-The hooks/logging session is finalized (temporary invocation directories removed, the logging
-bridge restored) at the end of `TrainctlRuntime.teardown()` on the normal path. On an uncaught
-exception, Lightning skips both the model's and the callback's own `teardown` entirely — so the
-adapter's `on_exception` dispatches the `on_exception` light/heavy hooks itself and then finalizes
-the session directly, in a `finally`, before the original exception propagates.
+Because the session's lifetime is bound exactly to one stage's `setup`/`teardown` pair, a hook that
+fires with no stage active at all — for example a standalone `Trainer.save_checkpoint()` call made
+after `fit()` has already returned — finds no open session and is a silent no-op: there is no run
+for it to belong to. Checkpoint hooks fire normally when checkpointing happens *during* an active
+stage (Lightning's own `ModelCheckpoint` callback mid-`fit()`, or `ckpt_path=` on `fit()` itself).
+
+On an uncaught exception, Lightning skips both the model's and the callback's own `teardown`
+entirely — so the adapter's `on_exception` dispatches the `on_exception` light/heavy hooks itself
+and then finalizes the session directly, in a `finally`, before the original exception propagates.
+
+### Operator walkthrough
+
+Using `examples/playground/run.py` (a slow, foreground CPU run meant for interactive poking):
+
+```sh
+mkdir -p /tmp/my-hooks/light
+cat > /tmp/my-hooks/light/on_train_batch_end.sh <<'EOF'
+echo "batch finished: $1"
+EOF
+uv run python -m examples.playground.run --hooks-source-dir /tmp/my-hooks
+```
+
+The startup banner prints the run's log directory; under it, `hooks/light/on_train_batch_end.sh`
+is the *copy* of the script above (still disabled — every seeded script starts with no execute
+bit, baseline or not), and every other one of the 74 slots is a disabled, commented example seeded
+from `trainctl/hooks/templates/`. In a second terminal:
+
+```sh
+chmod +x <log-dir>/hooks/light/on_train_batch_end.sh
+tail -f <log-dir>/trainctl.log   # or trainctl-rank-N.log under hooks_rank_policy="all"
+```
+
+The next batch boundary runs the script and logs nothing (exit `0`); editing the script to
+`exit 3` and waiting for the next batch produces one `ERROR` record in `trainctl.log` naming the
+hook, exit code, and stdout/stderr tails. `chmod -x` the same file to stop it, still without
+restarting training. Enabling `hooks/heavy/on_train_batch_end.sh` instead (or as well) additionally
+writes `.npy` files for the batch's tensors alongside its `manifest.json`, visible for the
+duration of that one script invocation.
 
 ### Status
 
 Shipped: config surface and validation, the Lightning-logging-to-Loguru bridge
 (`intercept_lightning_logging`), the run-local `hooks/` tree bootstrap and seeding, discovery and
 enablement semantics, light/heavy dispatch (including tensor export) with the supervised runner
-described above, and the Lightning `Callback` adapter wired in through `configure_callbacks()`
-(both `lightning.pytorch` and `pytorch_lightning`). Exercised directly by `tests/hooks/*_test.py`
-plus an in-process `Trainer.fit`-based end-to-end suite. The example walkthrough (playground/CIFAR
-updates) lands in the next increment.
+described above, the Lightning `Callback` adapter wired in through `configure_callbacks()` (both
+`lightning.pytorch` and `pytorch_lightning`), and the `examples/playground/run.py` walkthrough
+above (`--hooks-source-dir`). Exercised by `tests/hooks/*_test.py` (bootstrap, discovery, payload,
+runner, dispatch, session, the Lightning contract/catalogue-drift test, an in-process
+`Trainer.fit`-based end-to-end suite, and a ShellCheck pass over every rendered disabled-example
+script) plus `tests/logging_session_test.py`.

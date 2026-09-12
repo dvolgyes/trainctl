@@ -24,10 +24,14 @@ DEFAULT_LOG_DIR = Path("examples/cifar/lightning_logs")
 def _configure_logging(loglevel: str) -> None:
     """Reconfigures Loguru's default sink to the requested level.
 
+    Removes only Loguru's own pre-installed default sink (id 0) rather than every
+    currently-registered sink, so this never tears down a run-file sink trainctl
+    attaches once training starts.
+
     Args:
         loglevel: Loguru log level name, e.g. "INFO" or "DEBUG".
     """
-    logger.remove()
+    logger.remove(0)
     logger.add(sys.stderr, level=loglevel)
 
 

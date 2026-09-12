@@ -9,15 +9,21 @@ Then, in a second terminal, open the REST base URL printed at startup in a
 browser (or `curl` it) for a full guide to every endpoint, with links.
 Ctrl+C in this terminal stops training gracefully (Lightning's own signal
 handling); a second Ctrl+C forces an immediate exit.
+
+Pass `--hooks-source-dir` to seed the run's live `hooks/` tree from a baseline
+directory of light/heavy scripts instead of the disabled examples trainctl
+generates on its own; see the README's "Lifecycle shell hooks" section.
 """
 
 import os
 import time
 from pathlib import Path
 
+import click
 import lightning.pytorch as pl
 import torch
 from lightning.pytorch.loggers import TensorBoardLogger
+from loguru import logger
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision.datasets import FakeData
@@ -64,9 +70,14 @@ class PlaygroundModel(TrainctlMixin, pl.LightningModule):
         "hparams.step_delay": {"min": 0.0, "max": 5.0, "label": "Step delay (s)"},
     }
 
-    def __init__(self, lr: float = 1e-3, step_delay: float = 0.3) -> None:
-        super().__init__(rest_port=REST_PORT)
-        self.save_hyperparameters()
+    def __init__(
+        self,
+        lr: float = 1e-3,
+        step_delay: float = 0.3,
+        hooks_source_dir: Path | None = None,
+    ) -> None:
+        super().__init__(rest_port=REST_PORT, hooks_source_dir=hooks_source_dir)
+        self.save_hyperparameters(ignore=["hooks_source_dir"])
         self.net = nn.Sequential(
             nn.Flatten(), nn.Linear(3 * 16 * 16, 32), nn.ReLU(), nn.Linear(32, 10)
         )
@@ -150,7 +161,15 @@ def _build_loader() -> DataLoader:
     return DataLoader(dataset, batch_size=8, num_workers=0)
 
 
-def main() -> None:
+@click.command()
+@click.option(
+    "--hooks-source-dir",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),  # type: ignore[type-var]  # click's Path stub is AnyStr-only
+    default=None,
+    help="Baseline hooks/ directory (light/, heavy/, supporting files) copied into "
+    "this run's live hooks tree; see the README's 'Lifecycle shell hooks' section.",
+)
+def main(hooks_source_dir: Path | None) -> None:
     """Runs the playground in the foreground: prints usage instructions, then trains
     until `Trainer.fit` returns (Ctrl+C stops it gracefully via Lightning's own signal
     handling, since this runs on the main thread).
@@ -158,9 +177,9 @@ def main() -> None:
     _init_single_process_distributed()
 
     tb_logger = TensorBoardLogger(save_dir=str(LOG_DIR), name="playground")
-    print(_banner(Path(tb_logger.log_dir)))
+    print(_banner(Path(tb_logger.log_dir)))  # noqa: T201 -- pipeable startup banner, not a log message
 
-    model = PlaygroundModel()
+    model = PlaygroundModel(hooks_source_dir=hooks_source_dir)
     trainer = pl.Trainer(
         max_epochs=-1,
         max_time="00:01:00:00",
@@ -172,8 +191,8 @@ def main() -> None:
         trainer.fit(model, train_dataloaders=_build_loader())
     finally:
         _teardown_single_process_distributed()
-    print("Stopped.")
+    logger.info("Stopped.")
 
 
 if __name__ == "__main__":
-    main()
+    main()  # pylint: disable=no-value-for-parameter  # click supplies args from argv at runtime

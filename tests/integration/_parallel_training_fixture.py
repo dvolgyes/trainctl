@@ -58,6 +58,7 @@ class _FastModel(TrainctlMixin, pl.LightningModule):
             rest_port=rest_port,
             torch_debug_port=torch_debug_port,
             fuse_enabled=False,
+            hooks_enabled=False,
             artifact_dir=artifact_dir,
             inspection_strict=True,
         )
