@@ -160,7 +160,7 @@ repos:
         files: (^|/)(conftest|test_.*|.*_test)\.py$
         pass_filenames: false
 
-  # Source: 211_ruff_docstrings.yaml [central]
+  # Source: 211_ruff_docstrings.yaml [project] (also in: central)
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.3
     hooks:
@@ -168,9 +168,11 @@ repos:
         name: ruff-docstrings
         args:
           - --fix
-          - --select=D
           - --config
-          - lint.pydocstyle.convention = "google"
+          - |
+            lint.select = ["D"]
+            lint.pydocstyle.convention = "google"
+            lint.ignore = ["D107"]
         exclude: (^|/)(tests?|testing)/|\.ipynb$
 
   # Source: 220_xenon.yaml [central]
