@@ -13,11 +13,6 @@ from trainctl.hooks.session import HookSession
 _SHELL = Path(shutil.which("bash"))
 
 
-@pytest.fixture()
-def log():
-    return logger
-
-
 class _FakeLog:
     def __init__(self) -> None:
         self.warnings: list[str] = []

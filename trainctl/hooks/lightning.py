@@ -1,5 +1,4 @@
-"""Lightning `Callback` adapter: explicit signatures for all 37 lifecycle callbacks
-the catalogue tracks (Increment I4).
+"""Lightning `Callback` adapter: explicit signatures for the 37 callbacks the catalogue tracks.
 
 Deliberately not built by runtime reflection over the installed `Callback` class --
 `tests/hooks/lightning_contract_test.py` compares this module's coverage against
@@ -27,14 +26,14 @@ class _HookMethods:
     """
 
     def setup(self, trainer: Any, pl_module: Any, stage: str) -> None:
-        pl_module._trainctl.ensure_hook_session(trainer, pl_module)  # noqa: SLF001 -- intentional internal-integration coupling
+        pl_module._trainctl.ensure_hook_session(trainer, pl_module)
         _dispatch(trainer, pl_module, "setup", stage_override=stage)
 
     def teardown(self, trainer: Any, pl_module: Any, stage: str) -> None:
         try:
             _dispatch(trainer, pl_module, "teardown", stage_override=stage)
         finally:
-            pl_module._trainctl.finalize_hooks_and_logging()  # noqa: SLF001 -- intentional internal-integration coupling
+            pl_module._trainctl.finalize_hooks_and_logging()
 
     def on_fit_start(self, trainer: Any, pl_module: Any) -> None:
         _dispatch(trainer, pl_module, "on_fit_start")
@@ -241,7 +240,10 @@ class _HookMethods:
 
     def on_before_zero_grad(self, trainer: Any, pl_module: Any, optimizer: Any) -> None:
         _dispatch(
-            trainer, pl_module, "on_before_zero_grad", arguments={"optimizer": optimizer}
+            trainer,
+            pl_module,
+            "on_before_zero_grad",
+            arguments={"optimizer": optimizer},
         )
 
     def on_save_checkpoint(
@@ -275,7 +277,7 @@ class _HookMethods:
                 arguments={"exception": exception},
             )
         finally:
-            pl_module._trainctl.finalize_hooks_and_logging()  # noqa: SLF001 -- intentional internal-integration coupling
+            pl_module._trainctl.finalize_hooks_and_logging()
 
 
 def _dispatch(
@@ -288,7 +290,7 @@ def _dispatch(
     batch_idx: int | None = None,
     dataloader_idx: int | None = None,
 ) -> None:
-    runtime = pl_module._trainctl  # noqa: SLF001 -- intentional internal-integration coupling
+    runtime = pl_module._trainctl
     runtime.dispatch_hook(
         trainer,
         hook,

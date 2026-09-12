@@ -1,5 +1,4 @@
-"""Enable/disable validation for one script, plus a rate-limited scan for filenames
-the catalogue doesn't recognize.
+"""Enable/disable validation for one script, plus a rate-limited scan for unknown filenames.
 
 The execute bit is the only enable switch, re-checked immediately before every use
 (the current stat is never trusted from an earlier check or cache): `chmod +x`/`-x`
@@ -83,7 +82,7 @@ class EpochScanState:  # pylint: disable=too-few-public-methods
         if relative in self._warned_paths:
             return
         self._warned_paths.add(relative)
-        log.warning(  # noqa: PLE1205 -- loguru brace style, not stdlib %-logging
+        log.warning(
             "hooks: {} does not match a known callback name and will never be "
             "dispatched",
             relative,

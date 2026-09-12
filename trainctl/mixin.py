@@ -48,6 +48,7 @@ class TrainctlMixin:
     __trainctl_hooks_callback_class__: type
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Detects the Lightning backend and builds this subclass's hooks callback class."""
         super().__init_subclass__(**kwargs)
         cls.__trainctl_lightning_backend__ = detect_lightning_backend_from_mro(
             cls.__mro__
@@ -130,17 +131,20 @@ class TrainctlMixin:
         super().__init__(*args, **kwargs)
 
     def setup(self, stage: str) -> None:
+        """Lightning's `setup` hook; starts Trainctl's services for this stage."""
         super().setup(stage)
         if self._trainctl.config.enabled:
             self._validate_trainer_backend()
             self._trainctl.setup_environment(self, stage)
 
     def on_fit_start(self) -> None:
+        """Lightning's `on_fit_start` hook; forwards to `TrainctlRuntime`."""
         super().on_fit_start()
         if self._trainctl.config.enabled:
             self._trainctl.on_fit_start(self)
 
     def teardown(self, stage: str) -> None:
+        """Lightning's `teardown` hook; stops Trainctl's services for this stage."""
         try:
             if self._trainctl.config.enabled:
                 self._trainctl.teardown(self, stage)
@@ -148,17 +152,20 @@ class TrainctlMixin:
             super().teardown(stage)
 
     def on_train_batch_start(self, batch: Any, batch_idx: int) -> int | None:
+        """Lightning's `on_train_batch_start` hook; forwards to `TrainctlRuntime`."""
         result = super().on_train_batch_start(batch, batch_idx)
         if self._trainctl.config.enabled:
             self._trainctl.begin_train_batch(self, batch, batch_idx)
         return result
 
     def on_before_backward(self, loss: Any) -> None:
+        """Lightning's `on_before_backward` hook; forwards to `TrainctlRuntime`."""
         super().on_before_backward(loss)
         if self._trainctl.config.enabled:
             self._trainctl.before_backward(loss)
 
     def backward(self, loss: Any, *args: Any, **kwargs: Any) -> None:
+        """Lightning's `backward` hook; reports an exception here to `TrainctlRuntime`."""
         try:
             super().backward(loss, *args, **kwargs)
         except Exception as exc:
@@ -167,11 +174,13 @@ class TrainctlMixin:
             raise
 
     def on_after_backward(self) -> None:
+        """Lightning's `on_after_backward` hook; forwards to `TrainctlRuntime`."""
         super().on_after_backward()
         if self._trainctl.config.enabled:
             self._trainctl.after_backward()
 
     def on_train_batch_end(self, outputs: Any, batch: Any, batch_idx: int) -> None:
+        """Lightning's `on_train_batch_end` hook; forwards to `TrainctlRuntime`."""
         try:
             super().on_train_batch_end(outputs, batch, batch_idx)
             if self._trainctl.config.enabled:
@@ -183,28 +192,34 @@ class TrainctlMixin:
                 self._trainctl.finish_train_batch(self)
 
     def on_train_epoch_end(self) -> None:
+        """Lightning's `on_train_epoch_end` hook; forwards to `TrainctlRuntime`."""
         super().on_train_epoch_end()
         if self._trainctl.config.enabled:
             self._trainctl.process_safe_point(self, SafePoint.TRAIN_EPOCH_END)
 
     def on_validation_epoch_end(self) -> None:
+        """Lightning's `on_validation_epoch_end` hook; forwards to `TrainctlRuntime`."""
         super().on_validation_epoch_end()
         if self._trainctl.config.enabled:
             self._trainctl.process_safe_point(self, SafePoint.VALIDATION_EPOCH_END)
 
     def on_before_optimizer_step(self, optimizer: Any) -> None:
+        """Lightning's `on_before_optimizer_step` hook; forwards to `TrainctlRuntime`."""
         super().on_before_optimizer_step(optimizer)
         if self._trainctl.config.enabled:
             self._trainctl.before_optimizer_step()
             self._trainctl.process_safe_point(self, SafePoint.BEFORE_OPTIMIZER_STEP)
 
     def on_fit_end(self) -> None:
+        """Lightning's `on_fit_end` hook; forwards to `TrainctlRuntime`."""
         super().on_fit_end()
         if self._trainctl.config.enabled:
             self._trainctl.process_safe_point(self, SafePoint.FIT_END)
 
     def configure_callbacks(self) -> Sequence[Any]:
-        callbacks = _normalize_callbacks(super().configure_callbacks())  # type: ignore[misc]  # provided by the composed LightningModule
+        """Appends Trainctl's lifecycle-hooks adapter to the model's own callbacks."""
+        # super().configure_callbacks() is provided by the composed LightningModule.
+        callbacks = _normalize_callbacks(super().configure_callbacks())  # type: ignore[misc]
         if self._trainctl.config.enabled and self._trainctl.config.hooks_enabled:
             if self._trainctl_hooks_adapter is None:
                 self._trainctl_hooks_adapter = type(
@@ -215,7 +230,11 @@ class TrainctlMixin:
 
     def _validate_trainer_backend(self) -> None:
         backend = type(self).__trainctl_lightning_backend__
-        trainer = self.trainer  # type: ignore[attr-defined]  # provided by the composed LightningModule
+        # self.trainer is provided by the composed LightningModule; backend.Trainer is a
+        # real class at runtime, but pylint can't see through the dataclass field's `type`
+        # annotation.
+        trainer = self.trainer  # type: ignore[attr-defined]
+        # pylint: disable-next=isinstance-second-argument-not-valid-type
         if not isinstance(trainer, backend.Trainer):
             raise RuntimeError(
                 f"Trainctl Lightning backend mismatch: model uses {backend.name}, but Trainer is "

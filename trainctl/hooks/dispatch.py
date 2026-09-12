@@ -59,11 +59,9 @@ def dispatch_light(
 
     Revalidates enablement twice: once before spending time building the metadata
     (which is cheap, but heavy's counterpart is not), and again immediately before
-    launch, per the discovery contract's re-check requirement.
-
-    Args:
-        occurrence_id: This callback firing's identity, shared with the heavy hook
-            dispatched for the same occurrence (each still gets its own invocation id).
+    launch, per the discovery contract's re-check requirement. `occurrence_id` is this
+    callback firing's identity, shared with the heavy hook dispatched for the same
+    occurrence (each still gets its own invocation id).
 
     Returns:
         `None` if the light script is not currently enabled (an ordinary skip, not
@@ -159,7 +157,9 @@ def dispatch_heavy(
             stderr_truncated=False,
             error=prepared.reason,
         )
-        _log_failure(script, "heavy", context, occurrence_id, invocation_id, result, log)
+        _log_failure(
+            script, "heavy", context, occurrence_id, invocation_id, result, log
+        )
         return result
     leaves, truncated, reason = prepared
     invocation_dir = tmp_root / invocation_id
@@ -191,7 +191,9 @@ def dispatch_heavy(
     finally:
         shutil.rmtree(invocation_dir, ignore_errors=True)
     if _is_failure(result):
-        _log_failure(script, "heavy", context, occurrence_id, invocation_id, result, log)
+        _log_failure(
+            script, "heavy", context, occurrence_id, invocation_id, result, log
+        )
     return result
 
 
@@ -210,7 +212,7 @@ def _log_failure(
     result: ExecutionResult,
     log: Any,
 ) -> None:
-    log.error(  # noqa: PLE1205 -- loguru brace style, not stdlib %-logging
+    log.error(
         "hook failed: hook={} modality={} script={} session={} occurrence={} "
         "invocation={} rank={} stage={} epoch={} global_step={} phase={} exit_code={} "
         "signal={} duration_s={:.3f} error={} stdout_tail={!r} stderr_tail={!r}",

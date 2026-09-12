@@ -21,11 +21,7 @@ _NON_LIFECYCLE_METHODS = frozenset({"state_dict", "load_state_dict"})
 
 
 def _own_params(method: object) -> list[str]:
-    return [
-        name
-        for name in inspect.signature(method).parameters
-        if name != "self"
-    ]
+    return [name for name in inspect.signature(method).parameters if name != "self"]
 
 
 @pytest.fixture(params=_BACKEND_NAMES)

@@ -105,6 +105,8 @@ def test_scan_if_due_does_not_warn_about_known_callback_names(tmp_path, log) -> 
     assert warnings == []
 
 
-def test_scan_if_due_skips_unreadable_modality_dir_without_raising(tmp_path, log) -> None:
+def test_scan_if_due_skips_unreadable_modality_dir_without_raising(
+    tmp_path, log
+) -> None:
     state = EpochScanState()
     state.scan_if_due(tmp_path / "does-not-exist", ("fit", 0), log)

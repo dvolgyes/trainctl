@@ -33,9 +33,7 @@ _SHEBANG = "#!/usr/bin/env bash\n"
 
 
 class HooksBootstrapError(RuntimeError):
-    """A baseline copy or live-tree bootstrap step failed in a way that must not be retried
-    silently.
-    """
+    """A baseline copy or live-tree bootstrap step failed in a way that must not retry silently."""
 
 
 def bootstrap_hooks_tree(
@@ -87,7 +85,7 @@ def bootstrap_hooks_tree(
                 "refusing to reuse or overwrite it"
             )
         if source_dir is not None and record.get("source_dir") != str(source_dir):
-            log.warning(  # noqa: PLE1205 -- loguru brace style, not stdlib %-logging
+            log.warning(
                 "hooks_source_dir {} differs from the baseline recorded in {} for this run ({}); "
                 "the existing live tree is reused unchanged",
                 source_dir,
@@ -112,8 +110,7 @@ def bootstrap_hooks_tree(
         )
 
     base_dir.mkdir(parents=True, exist_ok=True)
-    live_dir = _publish_fresh_tree(base_dir, live_dir, resolved_source, session_id, log)
-    return live_dir
+    return _publish_fresh_tree(base_dir, live_dir, resolved_source, session_id, log)
 
 
 def _publish_fresh_tree(
@@ -125,7 +122,7 @@ def _publish_fresh_tree(
 ) -> Path:
     marker_path = base_dir / _MARKER_NAME
     staging_dir = Path(tempfile.mkdtemp(dir=base_dir, prefix=".hooks-staging-"))
-    os.chmod(staging_dir, _DEFAULT_DIR_MODE)
+    staging_dir.chmod(_DEFAULT_DIR_MODE)
     published = False
     try:
         (staging_dir / "light").mkdir(mode=_DEFAULT_DIR_MODE, exist_ok=True)
@@ -154,7 +151,7 @@ def _publish_fresh_tree(
                 )
             )
         if unknown_paths:
-            log.warning(  # noqa: PLE1205 -- loguru brace style, not stdlib %-logging
+            log.warning(
                 "hooks_source_dir has {} file(s) directly under light/ or heavy/ that do not "
                 "match a known callback name and will never be dispatched: {}",
                 len(unknown_paths),
@@ -189,7 +186,7 @@ def _publish_fresh_tree(
             shutil.rmtree(staging_dir, ignore_errors=True)
 
     _write_json(marker_path, record)
-    log.info(  # noqa: PLE1205 -- loguru brace style, not stdlib %-logging
+    log.info(
         "hooks: bootstrapped live tree at {} (source={})", live_dir, resolved_source
     )
     return live_dir
@@ -292,7 +289,7 @@ def _apply_ownership_and_mode(path: Path, uid: int, gid: int, mode: int) -> None
             raise PermissionError(
                 f"cannot set ownership of {path} to uid={uid}, gid={gid}: {exc}"
             ) from exc
-    os.chmod(path, mode)
+    path.chmod(mode)
 
 
 def _seed_missing_slots(staging_dir: Path, found_slots: set[tuple[str, str]]) -> None:

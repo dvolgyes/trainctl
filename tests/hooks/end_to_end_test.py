@@ -156,7 +156,9 @@ def test_hooks_fire_during_fit(tmp_path, pl_module, model_cls) -> None:
     assert (Path(trainer.log_dir) / _MARKER_NAME).exists()
 
     captured = tmp_path / "captured.json"
-    _make_script(hooks_dir / "light" / "on_train_batch_start.sh", f'cp "$1" "{captured}"')
+    _make_script(
+        hooks_dir / "light" / "on_train_batch_start.sh", f'cp "$1" "{captured}"'
+    )
     trainer2 = pl_module.Trainer(
         default_root_dir=str(tmp_path),
         max_epochs=1,
@@ -182,8 +184,12 @@ def test_sanity_check_hooks_fire(tmp_path) -> None:
     hooks_dir = Path(bootstrap_trainer.log_dir) / "hooks"
     start_marker = tmp_path / "sanity_start.marker"
     end_marker = tmp_path / "sanity_end.marker"
-    _make_script(hooks_dir / "light" / "on_sanity_check_start.sh", f'touch "{start_marker}"')
-    _make_script(hooks_dir / "light" / "on_sanity_check_end.sh", f'touch "{end_marker}"')
+    _make_script(
+        hooks_dir / "light" / "on_sanity_check_start.sh", f'touch "{start_marker}"'
+    )
+    _make_script(
+        hooks_dir / "light" / "on_sanity_check_end.sh", f'touch "{end_marker}"'
+    )
 
     trainer = _make_trainer(tmp_path, num_sanity_val_steps=2)
     trainer.fit(model, _make_loader(), val_dataloaders=_make_loader())
@@ -198,7 +204,9 @@ def test_validate_standalone_dispatches_validation_hooks(tmp_path) -> None:
     marker = tmp_path / "validated.marker"
     trainer.validate(model, dataloaders=_make_loader())
     hooks_dir = Path(trainer.log_dir) / "hooks"
-    _make_script(hooks_dir / "light" / "on_validation_epoch_end.sh", f'touch "{marker}"')
+    _make_script(
+        hooks_dir / "light" / "on_validation_epoch_end.sh", f'touch "{marker}"'
+    )
     trainer2 = _make_trainer(tmp_path)
     trainer2.validate(model, dataloaders=_make_loader())
     assert marker.exists()
@@ -243,14 +251,20 @@ def test_checkpoint_save_and_load_hooks_fire(tmp_path) -> None:
     hooks_dir = Path(trainer.log_dir) / "hooks"
     save_marker = tmp_path / "saved.marker"
     load_marker = tmp_path / "loaded.marker"
-    _make_script(hooks_dir / "light" / "on_save_checkpoint.sh", f'touch "{save_marker}"')
-    _make_script(hooks_dir / "light" / "on_load_checkpoint.sh", f'touch "{load_marker}"')
+    _make_script(
+        hooks_dir / "light" / "on_save_checkpoint.sh", f'touch "{save_marker}"'
+    )
+    _make_script(
+        hooks_dir / "light" / "on_load_checkpoint.sh", f'touch "{load_marker}"'
+    )
 
     ckpt_path = tmp_path / "ckpt.ckpt"
     checkpointer = ModelCheckpoint(
         dirpath=str(tmp_path), filename="mid-fit", every_n_train_steps=1, save_top_k=-1
     )
-    trainer2 = _make_trainer(tmp_path, enable_checkpointing=True, callbacks=[checkpointer])
+    trainer2 = _make_trainer(
+        tmp_path, enable_checkpointing=True, callbacks=[checkpointer]
+    )
     trainer2.fit(model, _make_loader())
     assert save_marker.exists()
     shutil.copy(checkpointer.best_model_path, ckpt_path)
@@ -283,7 +297,9 @@ def test_exception_triggers_on_exception_once_and_finalizes(tmp_path) -> None:
     assert model._trainctl._logging_session is None
 
 
-def test_sequential_fit_then_test_reuses_hooks_tree_and_adapter_instance(tmp_path) -> None:
+def test_sequential_fit_then_test_reuses_hooks_tree_and_adapter_instance(
+    tmp_path,
+) -> None:
     model = _TinyModelLP(**_base_kwargs())
     trainer = _make_trainer(tmp_path)
     trainer.fit(model, _make_loader())

@@ -22,8 +22,9 @@ from typing import Any
 from loguru import logger
 
 from trainctl.config import TrainctlConfig
+from trainctl.hooks.dispatch import HandleResult
 from trainctl.hooks.manager import bootstrap_hooks_tree
-from trainctl.hooks.session import HandleResult, HookSession
+from trainctl.hooks.session import HookSession
 from trainctl.lightning_backend import LightningBackend
 from trainctl.logging import LoggingSession
 from trainctl.runtime import (

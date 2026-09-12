@@ -326,7 +326,12 @@ def collect_tensor_leaves(
 
 
 def _collect_leaves(
-    value: Any, path: str, state: _TraversalState, leaves: list[_TensorLeaf], *, depth: int
+    value: Any,
+    path: str,
+    state: _TraversalState,
+    leaves: list[_TensorLeaf],
+    *,
+    depth: int,
 ) -> None:
     if isinstance(value, torch.Tensor):
         leaves.append(_TensorLeaf(path=path, tensor=value))
@@ -378,7 +383,9 @@ def prepare_heavy_export(
             )
         export_dtype = _resolve_export_dtype(leaf.tensor)
         if export_dtype is None:
-            return HeavyCaptureFailure(f"unsupported dtype at {leaf.path}: {leaf.tensor.dtype}")
+            return HeavyCaptureFailure(
+                f"unsupported dtype at {leaf.path}: {leaf.tensor.dtype}"
+            )
         predicted_bytes += leaf.tensor.numel() * numpy.dtype(export_dtype).itemsize
     if predicted_bytes > max_export_bytes:
         return HeavyCaptureFailure(
@@ -388,7 +395,9 @@ def prepare_heavy_export(
     return leaves, truncated, reason
 
 
-def export_tensors(leaves: list[_TensorLeaf], invocation_dir: Path) -> list[TensorRecord]:
+def export_tensors(
+    leaves: list[_TensorLeaf], invocation_dir: Path
+) -> list[TensorRecord]:
     """Detaches, moves to CPU, converts if needed, and writes each tensor as `.npy`.
 
     Only called after `prepare_heavy_export` has validated every leaf, so this never
@@ -413,7 +422,9 @@ def export_tensors(leaves: list[_TensorLeaf], invocation_dir: Path) -> list[Tens
                 file=filename,
                 shape=list(leaf.tensor.shape),
                 dtype=export_dtype,
-                original_dtype=str(leaf.tensor.dtype) if leaf.tensor.dtype is torch.bfloat16 else None,
+                original_dtype=str(leaf.tensor.dtype)
+                if leaf.tensor.dtype is torch.bfloat16
+                else None,
                 device=str(leaf.tensor.device),
             )
         )
@@ -441,7 +452,9 @@ def build_heavy_manifest(
     separately names the actual exported `.npy` files; a script correlates the two
     by `argument_path`.
     """
-    restricted = {name: arguments[name] for name in tensor_arg_names if name in arguments}
+    restricted = {
+        name: arguments[name] for name in tensor_arg_names if name in arguments
+    }
     described, meta_truncated, meta_reason = describe_arguments(
         restricted, max_items=max_metadata_items, max_depth=max_metadata_depth
     )

@@ -123,7 +123,9 @@ def run_script(
     """
     start = time.monotonic()
     try:
-        process = subprocess.Popen(
+        # Running an operator-enabled hook script is this module's purpose; the
+        # execute bit is the sole privilege boundary.
+        process = subprocess.Popen(  # noqa: S603
             [str(shell), str(script), *argv_extra],
             cwd=str(cwd),
             stdin=subprocess.DEVNULL,
@@ -202,7 +204,7 @@ def _terminate_group(process: subprocess.Popen[bytes], log: Any) -> None:
         return
     except subprocess.TimeoutExpired:
         pass
-    log.warning(  # noqa: PLE1205 -- loguru brace style, not stdlib %-logging
+    log.warning(
         "hook process group {} did not exit within {}s of SIGTERM; sending SIGKILL",
         pgid,
         _GRACE_PERIOD_S,

@@ -1,8 +1,6 @@
-"""`HookSession`: the per-run object that owns the live hooks tree and dispatches
-one Lightning callback occurrence to its light (and, from Increment I3, heavy)
-script.
+"""`HookSession`: dispatches one Lightning callback occurrence to its light/heavy script.
 
-Owned by `TrainctlRuntime` (Increment I4), constructed once per run right after
+Owned by `TrainctlRuntime`, constructed once per run right after
 `manager.bootstrap_hooks_tree` publishes or resumes the live tree. Lightning-agnostic:
 `handle()` takes plain values, not a `Trainer`/`LightningModule`, so it is testable
 without constructing either.

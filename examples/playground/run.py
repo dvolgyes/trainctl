@@ -164,7 +164,8 @@ def _build_loader() -> DataLoader:
 @click.command()
 @click.option(
     "--hooks-source-dir",
-    type=click.Path(path_type=Path, exists=True, file_okay=False),  # type: ignore[type-var]  # click's Path stub is AnyStr-only
+    # click's Path stub is AnyStr-only.
+    type=click.Path(path_type=Path, exists=True, file_okay=False),  # type: ignore[type-var]
     default=None,
     help="Baseline hooks/ directory (light/, heavy/, supporting files) copied into "
     "this run's live hooks tree; see the README's 'Lifecycle shell hooks' section.",
@@ -177,7 +178,8 @@ def main(hooks_source_dir: Path | None) -> None:
     _init_single_process_distributed()
 
     tb_logger = TensorBoardLogger(save_dir=str(LOG_DIR), name="playground")
-    print(_banner(Path(tb_logger.log_dir)))  # noqa: T201 -- pipeable startup banner, not a log message
+    banner = _banner(Path(tb_logger.log_dir))
+    print(banner)  # noqa: T201 -- pipeable startup banner, not a log message
 
     model = PlaygroundModel(hooks_source_dir=hooks_source_dir)
     trainer = pl.Trainer(

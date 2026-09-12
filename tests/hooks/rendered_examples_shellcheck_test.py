@@ -24,9 +24,13 @@ def test_rendered_examples_pass_shellcheck(tmp_path: Path) -> None:
     if _SHELLCHECK is None:
         pytest.skip("shellcheck is not on PATH in this environment")
 
-    live_dir = bootstrap_hooks_tree(tmp_path / "run", None, session_id="s-1", log=logger)
+    live_dir = bootstrap_hooks_tree(
+        tmp_path / "run", None, session_id="s-1", log=logger
+    )
     scripts = sorted(
-        str(path) for modality in MODALITIES for path in (live_dir / modality).glob("*.sh")
+        str(path)
+        for modality in MODALITIES
+        for path in (live_dir / modality).glob("*.sh")
     )
     assert scripts
 
