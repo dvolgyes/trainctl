@@ -261,4 +261,6 @@ CALLBACKS: tuple[CallbackSpec, ...] = (
 
 CALLBACK_NAMES: frozenset[str] = frozenset(spec.name for spec in CALLBACKS)
 
+CALLBACK_BY_NAME: dict[str, CallbackSpec] = {spec.name: spec for spec in CALLBACKS}
+
 MODALITIES: tuple[str, ...] = ("light", "heavy")

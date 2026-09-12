@@ -10,8 +10,9 @@ services individually through `TrainctlConfig` / `TrainctlMixin` keyword argumen
 An operator debugs a running Lightning job by editing ordinary shell scripts that live beside the
 run's logs — no code changes, no restart. Every Lightning `Callback` method has a slot:
 `hooks/light/<hook>.sh` (dispatched with a bounded JSON description of the callback's own
-arguments) and `hooks/heavy/<hook>.sh` (reserved for tensor export; not yet implemented — see
-Status below). Scripts run **synchronously**, on the training thread, at the real callback point.
+arguments) and `hooks/heavy/<hook>.sh` (dispatched with that same description plus the callback's
+actual tensors, exported as `.npy` files). Scripts run **synchronously**, on the training thread,
+at the real callback point.
 
 ### Enabling the facility
 
@@ -79,6 +80,50 @@ this path. Nested mappings/lists/tuples are traversed up to `hooks_max_metadata_
 If the encoded document would exceed `hooks_max_params_bytes`, `arguments` is dropped entirely
 (not partially re-truncated) and `truncated_reason` records why.
 
+### The heavy hook manifest
+
+A heavy hook is invoked as `bash <script> <manifest.json>`. Its tensor selection is static per
+callback (the catalogue's `tensor_args`, e.g. `batch` for `on_train_batch_start`, `loss` for
+`on_before_backward`, `checkpoint` for `on_save_checkpoint`) — every tensor found nested inside
+those named arguments is exported; a callback with no tensor-carrying arguments (or none present
+this firing) still runs its heavy script, with a valid empty export. Light and heavy share one
+firing's `occurrence_id` but get distinct `invocation_id`s and capture timestamps — light runs
+first, so the two are not a single simultaneous snapshot.
+
+```json
+{
+  "schema_version": 1,
+  "session_id": "...", "occurrence_id": "...", "invocation_id": "...",
+  "hook": "on_train_batch_start", "modality": "heavy",
+  "timestamp": 1234567890.123, "pid": 12345,
+  "rank": 0, "world_size": 1,
+  "stage": "fit", "epoch": 0, "global_step": 41, "batch_idx": 41, "dataloader_idx": null,
+  "arguments": { "batch": { "image": { "kind": "tensor", "shape": [4, 3, 8, 8], "...": "..." } } },
+  "tensor_records": [
+    { "argument_path": "batch/image", "file": "tensor-000001.npy",
+      "shape": [4, 3, 8, 8], "dtype": "float32", "original_dtype": null, "device": "cpu" }
+  ],
+  "truncated": false, "truncated_reason": null
+}
+```
+
+- `.npy` files are written with `numpy.save(..., allow_pickle=False)` — never a pickled Python
+  object — and named sequentially (`tensor-000001.npy`, ...), never derived from an argument name
+  or dict key. `argument_path` (e.g. `batch/image`) is how a script correlates a tensor record back
+  to its place in the (separately described, non-tensor) `arguments` structure.
+- `bfloat16` tensors are converted to `float32` for export (numpy has no native `bfloat16`); this
+  is recorded per-tensor as `original_dtype`. No other conversion happens.
+- **All-or-failed capture:** before any tensor is copied off its device, every tensor the callback
+  would export is checked for a supported layout (dense/strided; sparse, quantized, meta-device,
+  and nested tensors are rejected) and the predicted total converted size is checked against
+  `hooks_max_export_bytes` (default 1 GiB). If any tensor is unsupported or the budget would be
+  exceeded, the *entire* heavy capture fails — no partial manifest, no files written, the script is
+  never launched — and this is logged as one `ERROR` record (`phase="capture_failed"`) naming the
+  offending argument or the exceeded limit.
+- The private per-invocation directory (manifest plus `.npy` files) exists for the heavy script's
+  entire supervised lifetime and is removed afterward, on success, failure, or timeout alike — the
+  same lifecycle the light hook's `params.json` directory has.
+
 ### Timeouts, output, and failure
 
 - `hooks_timeout_s` (default `None`, unbounded) bounds how long training waits for a script.
@@ -99,7 +144,7 @@ If the encoded document would exceed `hooks_max_params_bytes`, `arguments` is dr
 
 Shipped: config surface and validation, the Lightning-logging-to-Loguru bridge
 (`intercept_lightning_logging`), the run-local `hooks/` tree bootstrap and seeding, discovery and
-enablement semantics, and light-hook dispatch with the supervised runner described above. **Not
-yet wired into a live Lightning `Trainer`** — the pieces above are exercised directly by
-`tests/hooks/*_test.py`, not yet attached via `configure_callbacks()`. Heavy (tensor-export) hooks,
-the Lightning adapter, and the end-to-end operator walkthrough land in subsequent increments.
+enablement semantics, and light/heavy dispatch (including tensor export) with the supervised
+runner described above. **Not yet wired into a live Lightning `Trainer`** — the pieces above are
+exercised directly by `tests/hooks/*_test.py`, not yet attached via `configure_callbacks()`. The
+Lightning adapter and the end-to-end operator walkthrough land in subsequent increments.

@@ -1,9 +1,11 @@
 """Behavioral tests for trainctl.hooks.session's HookSession."""
 
+import json
 import shutil
 from pathlib import Path
 
 import pytest
+import torch
 from loguru import logger
 
 from trainctl.hooks.session import HookSession
@@ -51,6 +53,7 @@ def _make_session(
         max_params_bytes=256 * 1024,
         max_metadata_items=1000,
         max_metadata_depth=8,
+        max_export_bytes=1024**3,
         max_output_bytes=64 * 1024,
         log=log if log is not None else logger,
     )
@@ -64,7 +67,7 @@ def test_rank_zero_policy_dispatches_on_rank_zero(tmp_path) -> None:
     result = session.handle("on_train_batch_start", stage="fit", epoch=0, global_step=0)
 
     assert result is not None
-    assert result.phase == "completed"
+    assert result.light.phase == "completed"
 
 
 def test_rank_zero_policy_skips_non_zero_rank_and_allocates_nothing(tmp_path) -> None:
@@ -87,7 +90,7 @@ def test_all_policy_dispatches_on_non_zero_rank(tmp_path) -> None:
     result = session.handle("on_train_batch_start", stage="fit", epoch=0, global_step=0)
 
     assert result is not None
-    assert result.phase == "completed"
+    assert result.light.phase == "completed"
 
 
 @pytest.mark.parametrize("rank_policy", ["rank_zero", "all"])
@@ -100,7 +103,9 @@ def test_disabled_script_returns_none_on_rank_zero(tmp_path, rank_policy) -> Non
 
     result = session.handle("on_train_batch_start", stage="fit", epoch=0, global_step=0)
 
-    assert result is None
+    assert result is not None
+    assert result.light is None
+    assert result.heavy is None
 
 
 def test_handle_threads_identity_and_arguments_into_params(tmp_path) -> None:
@@ -119,8 +124,8 @@ def test_handle_threads_identity_and_arguments_into_params(tmp_path) -> None:
     )
 
     assert result is not None
-    assert result.phase == "completed"
-    seen = result.stdout_tail
+    assert result.light.phase == "completed"
+    seen = result.light.stdout_tail
     assert '"session_id": "s-1"' in seen
     assert '"hook": "on_train_batch_start"' in seen
     assert '"stage": "fit"' in seen
@@ -172,3 +177,129 @@ def test_public_identity_attributes_match_constructor_args(tmp_path) -> None:
     assert session.session_id == "s-1"
     assert session.rank == 1
     assert session.world_size == 2
+
+
+def test_handle_dispatches_both_light_and_heavy_when_both_enabled(tmp_path) -> None:
+    live_dir = tmp_path / "run" / "hooks"
+    _make_script(live_dir / "light" / "on_train_batch_start.sh", 'cat "$1"')
+    _make_script(live_dir / "heavy" / "on_train_batch_start.sh", 'cat "$1"')
+    session = _make_session(live_dir, rank=0, rank_policy="rank_zero")
+
+    result = session.handle(
+        "on_train_batch_start",
+        stage="fit",
+        epoch=0,
+        global_step=0,
+        arguments={"batch": {"x": torch.arange(4.0)}},
+    )
+
+    assert result.light is not None
+    assert result.light.phase == "completed"
+    assert result.heavy is not None
+    assert result.heavy.phase == "completed"
+
+
+def test_light_and_heavy_share_occurrence_id_but_not_invocation_id(tmp_path) -> None:
+    live_dir = tmp_path / "run" / "hooks"
+    _make_script(live_dir / "light" / "on_train_batch_start.sh", 'cat "$1"')
+    _make_script(live_dir / "heavy" / "on_train_batch_start.sh", 'cat "$1"')
+    session = _make_session(live_dir, rank=0, rank_policy="rank_zero")
+
+    result = session.handle(
+        "on_train_batch_start",
+        stage="fit",
+        epoch=0,
+        global_step=0,
+        arguments={"batch": {"x": torch.arange(4.0)}},
+    )
+
+    light_doc = json.loads(result.light.stdout_tail)
+    heavy_doc = json.loads(result.heavy.stdout_tail)
+    assert light_doc["occurrence_id"] == heavy_doc["occurrence_id"]
+    assert light_doc["invocation_id"] != heavy_doc["invocation_id"]
+
+
+def test_only_heavy_enabled_light_is_none(tmp_path) -> None:
+    live_dir = tmp_path / "run" / "hooks"
+    _make_script(live_dir / "heavy" / "on_train_batch_start.sh", 'cat "$1"')
+    session = _make_session(live_dir, rank=0, rank_policy="rank_zero")
+
+    result = session.handle(
+        "on_train_batch_start",
+        stage="fit",
+        epoch=0,
+        global_step=0,
+        arguments={"batch": {"x": torch.arange(4.0)}},
+    )
+
+    assert result.light is None
+    assert result.heavy is not None
+    assert result.heavy.phase == "completed"
+
+
+def test_only_light_enabled_heavy_is_none(tmp_path) -> None:
+    live_dir = tmp_path / "run" / "hooks"
+    _make_script(live_dir / "light" / "on_train_batch_start.sh", 'cat "$1"')
+    session = _make_session(live_dir, rank=0, rank_policy="rank_zero")
+
+    result = session.handle("on_train_batch_start", stage="fit", epoch=0, global_step=0)
+
+    assert result.heavy is None
+    assert result.light is not None
+    assert result.light.phase == "completed"
+
+
+def test_heavy_export_restricted_to_catalogue_tensor_args(tmp_path) -> None:
+    live_dir = tmp_path / "run" / "hooks"
+    _make_script(live_dir / "heavy" / "on_train_batch_start.sh", 'cat "$1"')
+    session = _make_session(live_dir, rank=0, rank_policy="rank_zero")
+
+    result = session.handle(
+        "on_train_batch_start",
+        stage="fit",
+        epoch=0,
+        global_step=0,
+        arguments={
+            "batch": {"x": torch.arange(4.0)},
+            "unrelated": {"y": torch.arange(4.0)},
+        },
+    )
+
+    manifest = json.loads(result.heavy.stdout_tail)
+    paths = {record["argument_path"] for record in manifest["tensor_records"]}
+    assert "batch/x" in paths
+    assert not any(path.startswith("unrelated") for path in paths)
+
+
+def test_heavy_dispatches_with_empty_manifest_for_tensorless_hook(tmp_path) -> None:
+    live_dir = tmp_path / "run" / "hooks"
+    _make_script(live_dir / "heavy" / "on_train_epoch_end.sh", 'cat "$1"')
+    session = _make_session(live_dir, rank=0, rank_policy="rank_zero")
+
+    result = session.handle("on_train_epoch_end", stage="fit", epoch=0, global_step=0)
+
+    assert result.heavy is not None
+    assert result.heavy.phase == "completed"
+    manifest = json.loads(result.heavy.stdout_tail)
+    assert manifest["tensor_records"] == []
+
+
+def test_rank_gating_skips_both_modalities_together(tmp_path) -> None:
+    live_dir = tmp_path / "run" / "hooks"
+    heavy_marker = tmp_path / "heavy-marker"
+    _make_script(live_dir / "light" / "on_train_batch_start.sh", "exit 0")
+    _make_script(
+        live_dir / "heavy" / "on_train_batch_start.sh", f'touch "{heavy_marker}"'
+    )
+    session = _make_session(live_dir, rank=1, rank_policy="rank_zero")
+
+    result = session.handle(
+        "on_train_batch_start",
+        stage="fit",
+        epoch=0,
+        global_step=0,
+        arguments={"batch": {"x": torch.arange(4.0)}},
+    )
+
+    assert result is None
+    assert not heavy_marker.exists()
