@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 authors = [{ name = "David Völgyes", email = "dvolgyes@deepconv.ai" }]
 dependencies = [
   "click>=8.5.0",
